@@ -99,6 +99,34 @@ void TexturePacker::parse_json_file(const std::string &file_path, unsigned int a
     }
 }
 
+int TexturePacker::get_packed_texture_index_of_texture(const std::string &file_path) {
+    PackedTextureSubTexture packed_texture = get_packed_texture_sub_texture(file_path);
+    return packed_texture.packed_texture_index;
+}
+
+glm::vec2 TexturePacker::get_packed_texture_coordinate(const std::string &file_path,
+                                                       const glm::vec2 &texture_coordinate) {
+    PackedTextureSubTexture packed_texture = get_packed_texture_sub_texture(file_path);
+
+    if (packed_texture.texture_coordinates.size() < 2) {
+        throw std::runtime_error("Packed texture must have at least two opposing corners defined.");
+    }
+
+    // opposing corners
+    const glm::vec2 &corner_1 = packed_texture.texture_coordinates[0];
+    const glm::vec2 &corner_2 = packed_texture.texture_coordinates[2];
+
+    glm::vec2 direction_vector = corner_2 - corner_1;
+
+    // (pairwise multiplication) to move to the correct pos
+    glm::vec2 scaled_vector = direction_vector * texture_coordinate;
+
+    // don't forget to move back
+    glm::vec2 transformed_coord = corner_1 + scaled_vector;
+
+    return transformed_coord;
+}
+
 PackedTextureSubTexture TexturePacker::get_packed_texture_sub_texture(const std::string &file_path) {
     if (file_path_to_packed_texture_info.contains(file_path)) {
         return file_path_to_packed_texture_info.at(file_path);
