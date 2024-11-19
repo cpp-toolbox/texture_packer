@@ -104,6 +104,19 @@ int TexturePacker::get_packed_texture_index_of_texture(const std::string &file_p
     return packed_texture.packed_texture_index;
 }
 
+std::vector<glm::vec2>
+TexturePacker::get_packed_texture_coordinates(const std::string &file_path,
+                                              const std::vector<glm::vec2> &texture_coordinates) {
+    std::vector<glm::vec2> packed_coordinates;
+
+    for (const auto &uv : texture_coordinates) {
+        glm::vec2 packed_coord = get_packed_texture_coordinate(file_path, uv);
+        packed_coordinates.push_back(packed_coord);
+    }
+
+    return packed_coordinates;
+}
+
 glm::vec2 TexturePacker::get_packed_texture_coordinate(const std::string &file_path,
                                                        const glm::vec2 &texture_coordinate) {
     PackedTextureSubTexture packed_texture = get_packed_texture_sub_texture(file_path);
