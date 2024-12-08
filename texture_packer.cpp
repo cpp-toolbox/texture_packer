@@ -15,8 +15,8 @@ TexturePacker::TexturePacker(const std::string &packed_texture_json_path,
     unsigned char *data;
     int num_layers = static_cast<int>(packed_texture_paths.size());
 
-    // assuming that it loads in upside down
-    stbi_set_flip_vertically_on_load(1);
+    /*// assuming that it loads in upside down*/
+    /*stbi_set_flip_vertically_on_load(1);*/
 
     // Assuming all textures are the same size; load the first texture to get dimensions
     data = stbi_load(packed_texture_paths[0].c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
@@ -31,8 +31,8 @@ TexturePacker::TexturePacker(const std::string &packed_texture_json_path,
     // Initialize the 2D texture array
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, width, height, num_layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -48,15 +48,21 @@ TexturePacker::TexturePacker(const std::string &packed_texture_json_path,
     }
 }
 
-std::vector<glm::vec2> compute_texture_coordinates(int x, int y, int width, int height, int atlas_width,
+std::vector<glm::vec2> compute_texture_coordinates(float x, float y, float width, float height, int atlas_width,
                                                    int atlas_height) {
-    // we do one minus here because we flip our atlas
-    float u1 = static_cast<float>(x) / atlas_width;
-    float v1 = 1 - static_cast<float>(y + height) / atlas_height;
-    float u2 = static_cast<float>(x + width) / atlas_width;
-    float v2 = 1 - static_cast<float>(y) / atlas_height;
+    // Calculate texture coordinates
+    float u_min = x / atlas_width;
+    float v_min = y / atlas_height;
+    float u_max = (x + width) / atlas_width;
+    float v_max = (y + height) / atlas_height;
 
-    return {{u1, v2}, {u1, v1}, {u2, v1}, {u2, v2}};
+    return {
+        // note that top and bottom are inverted compared to the vertex positions due to opengl
+        {u_max, v_min}, // Top-right
+        {u_max, v_max}, // Bottom-right
+        {u_min, v_max}, // Bottom-left
+        {u_min, v_min}  // Top-left
+    };
 }
 
 PackedTextureSubTexture TexturePacker::parse_sub_texture(const nlohmann::json &sub_texture_json, int atlas_width,
@@ -68,21 +74,24 @@ PackedTextureSubTexture TexturePacker::parse_sub_texture(const nlohmann::json &s
     int height = sub_texture_json.at("height").get<int>();
     int packed_texture_index = sub_texture_json.at("container_index").get<unsigned int>();
 
+    // regular images packed in
     sub_texture.texture_coordinates = compute_texture_coordinates(x, y, width, height, atlas_width, atlas_height);
     sub_texture.packed_texture_index = packed_texture_index;
 
+    // sub texture is a texture atlas
+    // things that were texture atlases, that also got packed in (one level of recursion)
     if (sub_texture_json.contains("sub_textures")) {
-        for (auto &[sub_name, sub_atlas_json] : sub_texture_json.at("sub_textures").items()) {
-            int sub_x = sub_atlas_json.at("x").get<int>();
-            int sub_y = sub_atlas_json.at("y").get<int>();
-            int sub_width = sub_atlas_json.at("width").get<int>();
-            int sub_height = sub_atlas_json.at("height").get<int>();
+        for (auto &[subtexture_name, sub_atlas_json] : sub_texture_json.at("sub_textures").items()) {
+            float sub_x = sub_atlas_json.at("x").get<float>();
+            float sub_y = sub_atlas_json.at("y").get<float>();
+            float sub_width = sub_atlas_json.at("width").get<float>();
+            float sub_height = sub_atlas_json.at("height").get<float>();
 
             PackedTextureSubTexture sub_atlas_sub_texture;
             sub_atlas_sub_texture.packed_texture_index = packed_texture_index;
             sub_atlas_sub_texture.texture_coordinates =
                 compute_texture_coordinates(sub_x, sub_y, sub_width, sub_height, atlas_width, atlas_height);
-            sub_texture.sub_atlas[sub_name] = sub_atlas_sub_texture;
+            sub_texture.sub_atlas[subtexture_name] = sub_atlas_sub_texture;
         }
     }
 
@@ -95,6 +104,7 @@ void TexturePacker::parse_json_file(const std::string &file_path, unsigned int a
     file >> j;
 
     for (const auto &[path, texture_info] : j["sub_textures"].items()) {
+        std::cout << "super working on : " << path << std::endl;
         file_path_to_packed_texture_info[path] = parse_sub_texture(texture_info, atlas_width, atlas_height);
     }
 }
@@ -156,7 +166,15 @@ PackedTextureSubTexture TexturePacker::get_packed_texture_sub_texture_atlas(cons
         }
         throw std::runtime_error("Subtexture name not found: " + sub_texture_name);
     }
-    throw std::runtime_error("File path not found: " + file_path);
+    throw std::runtime_error("File path not found in packed texture: " + file_path);
+}
+
+size_t TexturePacker::get_atlas_size_of_sub_texture(const std::string &file_path) {
+    if (file_path_to_packed_texture_info.contains(file_path)) {
+        auto &texture = file_path_to_packed_texture_info.at(file_path);
+        return texture.sub_atlas.size();
+    }
+    throw std::runtime_error("File path not found in packed texture: " + file_path);
 }
 
 void TexturePacker::bind_texture_array() { glBindTexture(GL_TEXTURE_2D_ARRAY, texture_array); }
