@@ -136,8 +136,8 @@ glm::vec2 TexturePacker::get_packed_texture_coordinate(const std::string &file_p
     }
 
     // opposing corners
-    const glm::vec2 &corner_1 = packed_texture.texture_coordinates[0];
-    const glm::vec2 &corner_2 = packed_texture.texture_coordinates[2];
+    const glm::vec2 &corner_1 = packed_texture.texture_coordinates[2];
+    const glm::vec2 &corner_2 = packed_texture.texture_coordinates[0];
 
     glm::vec2 direction_vector = corner_2 - corner_1;
 
