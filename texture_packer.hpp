@@ -7,6 +7,8 @@
 #include <string>
 #include <glm/glm.hpp>
 
+#include "sbpt_generated_includes.hpp"
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -19,7 +21,8 @@ struct PackedTextureSubTexture {
 
 class TexturePacker {
   public:
-    TexturePacker(const std::string &packed_texture_json_path, const std::vector<std::string> &packed_texture_paths);
+    TexturePacker(const std::string &packed_texture_json_path);
+    void regenerate(const std::string &packed_texture_json_path);
     PackedTextureSubTexture get_packed_texture_sub_texture(const std::string &file_path);
     int get_packed_texture_index_of_texture(const std::string &file_path);
     glm::vec2 get_packed_texture_coordinate(const std::string &file_path, const glm::vec2 &texture_coordinate);

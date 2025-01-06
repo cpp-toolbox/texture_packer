@@ -3,10 +3,16 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include <regex>
 
-TexturePacker::TexturePacker(const std::string &packed_texture_json_path,
-                             const std::vector<std::string> &packed_texture_paths) {
-    // Load JSON configuration
+TexturePacker::TexturePacker(const std::string &packed_texture_json_path) { regenerate(packed_texture_json_path); }
+
+void TexturePacker::regenerate(const std::string &packed_texture_json_path) {
+
+    std::string texture_directory = "assets/packed_textures/";
+    std::regex texture_pattern("packed_texture_\\d+\\.png");
+
+    std::vector<std::string> packed_texture_paths = list_files_matching_regex(texture_directory, texture_pattern);
 
     glGenTextures(1, &texture_array);
     glBindTexture(GL_TEXTURE_2D_ARRAY, texture_array);
