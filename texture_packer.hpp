@@ -3,14 +3,34 @@
 
 #include <map>
 #include <nlohmann/json_fwd.hpp>
+#include <optional>
+#include <set>
+#include <unordered_set>
 #include <vector>
 #include <string>
 #include <glm/glm.hpp>
 
 #include "sbpt_generated_includes.hpp"
+#include "split_packer.hpp"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
+/// new VVV
+
+struct TextureBlock {
+    TextureBlock(int width, int height, const std::string &file) : block(width, height), texture_path(file) {};
+    Block block;
+    std::string texture_path;
+    std::map<std::string, std::map<std::string, float>> subtextures;
+};
+
+struct PackedTextureContainer {
+    std::shared_ptr<SplitPacker> packer;
+    std::vector<TextureBlock> packed_texture_blocks;
+};
+
+/// new ^^^
 
 struct PackedTextureSubTexture {
     unsigned int packed_texture_index;
@@ -42,15 +62,25 @@ class TexturePacker {
     construct_texture_blocks_from_texture_paths(const std::vector<std::string> &texture_paths);
 
     PackedTextureSubTexture get_packed_texture_sub_texture(const std::string &file_path);
+
     int get_packed_texture_index_of_texture(const std::string &file_path);
+
     glm::vec2 get_packed_texture_coordinate(const std::string &file_path, const glm::vec2 &texture_coordinate);
+
     std::vector<glm::vec2> get_packed_texture_coordinates(const std::string &file_path,
                                                           const std::vector<glm::vec2> &texture_coordinate);
+
     PackedTextureSubTexture get_packed_texture_sub_texture_atlas(const std::string &file_path,
                                                                  const std::string &sub_texture_name);
+
     size_t get_atlas_size_of_sub_texture(const std::string &file_path);
 
     void bind_texture_array();
+
+    std::vector<std::string> currently_held_texture_paths;
+    const std::filesystem::path &textures_directory;
+    const std::filesystem::path &output_dir;
+    int container_side_length;
 
   private:
     void set_file_path_to_packed_texture_map(const std::filesystem::path &file_path, unsigned int atlas_width,

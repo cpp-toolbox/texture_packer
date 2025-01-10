@@ -1,13 +1,25 @@
 #include "texture_packer.hpp"
 #include <stb_image.h>
+#include <stb_image_write.h>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <regex>
+#include <set>
 
-TexturePacker::TexturePacker(const std::string &packed_texture_json_path) { regenerate(packed_texture_json_path); }
+#include <iostream>
+#include <unordered_set>
+#include <vector>
+#include <string>
+#include <map>
+#include <memory>
 
-void TexturePacker::regenerate(const std::string &packed_texture_json_path) {
+void create_directory_if_needed(const std::filesystem::path &output_dir) {
+    // Check if the path is empty before proceeding
+    if (output_dir.empty()) {
+        std::cerr << "Error: Provided directory path is empty!" << std::endl;
+        return;
+    }
 
     // Check if the directory exists
     if (!std::filesystem::exists(output_dir)) {
@@ -41,8 +53,6 @@ std::vector<std::string> TexturePacker::get_texture_paths(const std::filesystem:
             if (file.size() > 4 && (file.substr(file.size() - 4) == ".png" || file.substr(file.size() - 4) == ".jpg" ||
                                     file.substr(file.size() - 5) == ".jpeg")) {
                 std::string file_path = entry.path().string();
-		
-		std::cout << "DEBOGGING: " << file_path << std::endl;
 
                 // Skip files inside the output directory
                 if (std::filesystem::equivalent(entry.path().parent_path(), output_dir)) {
@@ -161,7 +171,6 @@ void TexturePacker::pack_textures(const std::vector<std::string> &texture_paths,
             }
 
             // Add metadata for this block
-	    std::cout << "delme: " << block.texture_path << std::endl;
             result["sub_textures"][block.texture_path] = {{"container_index", static_cast<int>(i)},
                                                           {"x", placement.top_left_x},
                                                           {"y", placement.top_left_y},
@@ -375,7 +384,7 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
     }
     stbi_image_free(data);
 
-    parse_json_file(packed_texture_json_path, width, height);
+    set_file_path_to_packed_texture_map(packed_texture_json_path, width, height);
 
 
     // Initialize the 2D texture array
