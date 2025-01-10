@@ -1,14 +1,363 @@
 #include "texture_packer.hpp"
 #include <stb_image.h>
+#include <stb_image_write.h>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <regex>
+#include <set>
 
-TexturePacker::TexturePacker(const std::string &packed_texture_json_path) { regenerate(packed_texture_json_path); }
+#include <iostream>
+#include <unordered_set>
+#include <vector>
+#include <string>
+#include <map>
+#include <memory>
 
-void TexturePacker::regenerate(const std::string &packed_texture_json_path) {
+void create_directory_if_needed(const std::filesystem::path &output_dir) {
+    // Check if the path is empty before proceeding
+    if (output_dir.empty()) {
+        std::cerr << "Error: Provided directory path is empty!" << std::endl;
+        return;
+    }
 
+    // Check if the directory exists
+    if (!std::filesystem::exists(output_dir)) {
+        try {
+            // Create the directory if it does not exist
+            std::filesystem::create_directories(output_dir);
+        } catch (const std::filesystem::filesystem_error &e) {
+            std::cerr << "Error creating directory: " << e.what() << std::endl;
+        }
+    }
+}
+
+TexturePacker::TexturePacker(const std::filesystem::path &textures_directory, const std::filesystem::path &output_dir,
+                             int container_side_length)
+    : textures_directory(textures_directory), output_dir(output_dir), container_side_length(container_side_length) {
+
+    create_directory_if_needed(output_dir);
+    std::vector<std::string> initial_texture_paths = get_texture_paths(textures_directory, output_dir);
+    regenerate(initial_texture_paths);
+}
+
+std::vector<std::string> TexturePacker::get_texture_paths(const std::string &directory, const std::string &output_dir) {
+    std::vector<std::string> image_file_paths;
+
+    // Walk through the directory and subdirectories
+    for (const std::filesystem::directory_entry &entry : std::filesystem::recursive_directory_iterator(directory)) {
+        if (entry.is_regular_file()) {
+            std::string file = entry.path().filename().string();
+
+            // Check if file is a supported image type
+            if (file.size() > 4 && (file.substr(file.size() - 4) == ".png" || file.substr(file.size() - 4) == ".jpg" ||
+                                    file.substr(file.size() - 5) == ".jpeg")) {
+                std::string file_path = entry.path().string();
+
+                // Skip files inside the output directory
+                if (std::filesystem::equivalent(entry.path().parent_path(), output_dir)) {
+                    std::cout << "Skipping file inside output directory: " << file_path << std::endl;
+                    continue;
+                }
+
+                image_file_paths.push_back(file_path);
+            }
+        }
+    }
+    return image_file_paths;
+}
+
+bool is_power_of_two(int n) { return n > 0 && (n & (n - 1)) == 0; }
+
+void TexturePacker::pack_textures(const std::vector<std::string> &texture_paths,
+                                  const std::filesystem::path &output_dir, int container_side_length) {
+    std::cout << "Starting texture packing with " << texture_paths.size() << " textures.\n";
+
+    // Step 1: Construct texture blocks from the provided texture paths
+    std::vector<TextureBlock> texture_blocks = construct_texture_blocks_from_texture_paths(texture_paths);
+    std::cout << "Constructed " << texture_blocks.size() << " texture blocks:\n";
+    for (const auto &block : texture_blocks) {
+        std::cout << "  - TextureBlock: " << block.texture_path << "\n"
+                  << "      Dimensions: " << block.block.w << "x" << block.block.h << "\n"
+                  << "      Subtextures: [\n";
+        for (const auto &[key, value] : block.subtextures) {
+            std::cout << "        \"" << key << "\": {";
+            for (const auto &[sub_key, sub_value] : value) {
+                std::cout << " \"" << sub_key << "\": " << sub_value << ",";
+            }
+            std::cout << " }\n";
+        }
+        std::cout << "      ]\n";
+    }
+
+    // Step 2: Pack the texture blocks into containers
+    std::vector<PackedTextureContainer> packed_texture_containers =
+        pack_texture_blocks_into_containers(texture_blocks, container_side_length);
+    std::cout << "Packed texture blocks into " << packed_texture_containers.size() << " containers:\n";
+
+    for (size_t i = 0; i < packed_texture_containers.size(); ++i) {
+        const auto &container = packed_texture_containers[i];
+        std::cout << "Container " << i << ":\n";
+        std::cout << "  - Number of packed blocks: " << container.packed_texture_blocks.size() << "\n";
+        for (const auto &block : container.packed_texture_blocks) {
+            std::cout << "    - TextureBlock: " << block.texture_path << "\n"
+                      << "        Dimensions: " << block.block.w << "x" << block.block.h << "\n";
+            if (block.block.packed_placement) {
+                const auto &placement = block.block.packed_placement.value();
+                std::cout << "        Placement: (" << placement.top_left_x << ", " << placement.top_left_y << ")\n";
+            } else {
+                std::cout << "        Placement: Not packed\n";
+            }
+            std::cout << "        Subtextures: [\n";
+            for (const auto &[key, value] : block.subtextures) {
+                std::cout << "          \"" << key << "\": {";
+                for (const auto &[sub_key, sub_value] : value) {
+                    std::cout << " \"" << sub_key << "\": " << sub_value << ",";
+                }
+                std::cout << " }\n";
+            }
+            std::cout << "        ]\n";
+        }
+    }
+
+    // Step 3: Prepare JSON metadata and write packed texture images
+    nlohmann::json result;
+
+    for (size_t i = 0; i < packed_texture_containers.size(); ++i) {
+        const auto &container = packed_texture_containers[i];
+        std::cout << "Processing container " << i << " with " << container.packed_texture_blocks.size()
+                  << " texture blocks.\n";
+
+        std::vector<uint8_t> image_data(container_side_length * container_side_length * 4, 0); // Assuming RGBA format
+
+        for (const auto &block : container.packed_texture_blocks) {
+            if (!block.block.packed_placement.has_value()) {
+                std::cout << "Skipping block without placement.\n";
+                continue; // Skip blocks that were not successfully packed
+            }
+
+            const auto &placement = block.block.packed_placement.value();
+            std::cout << "Processing block: " << block.texture_path << " at position (" << placement.top_left_x << ", "
+                      << placement.top_left_y << ").\n";
+
+            // Load the block image (e.g., using stb_image)
+            int img_width, img_height, channels;
+            std::unique_ptr<uint8_t[], void (*)(void *)> block_image(
+                stbi_load(block.texture_path.c_str(), &img_width, &img_height, &channels, 4), stbi_image_free);
+
+            if (!block_image) {
+                std::cerr << "Failed to load texture: " << block.texture_path << std::endl;
+                continue;
+            }
+
+            std::cout << "Loaded image: " << block.texture_path << " with dimensions (" << img_width << "x"
+                      << img_height << ").\n";
+
+            // Copy the block image into the container image at the specified position
+            for (int row = 0; row < img_height; ++row) {
+                for (int col = 0; col < img_width; ++col) {
+                    for (int channel = 0; channel < 4; ++channel) {
+                        int dest_x = placement.top_left_x + col;
+                        int dest_y = placement.top_left_y + row;
+                        if (dest_x < 0 || dest_x >= container_side_length || dest_y < 0 ||
+                            dest_y >= container_side_length) {
+                            std::cerr << "Out-of-bounds access detected for block: " << block.texture_path << "\n";
+                            continue;
+                        }
+                        image_data[(dest_y * container_side_length + dest_x) * 4 + channel] =
+                            block_image[(row * img_width + col) * 4 + channel];
+                    }
+                }
+            }
+
+            // Add metadata for this block
+            result["sub_textures"][block.texture_path] = {{"container_index", static_cast<int>(i)},
+                                                          {"x", placement.top_left_x},
+                                                          {"y", placement.top_left_y},
+                                                          {"width", block.block.w},
+                                                          {"height", block.block.h},
+                                                          {"sub_textures", block.subtextures}};
+        }
+
+        // Write the packed texture image to a file
+        std::string filename = "packed_texture_" + std::to_string(i) + ".png";
+        stbi_write_png((output_dir / filename).string().c_str(), container_side_length, container_side_length, 4,
+                       image_data.data(), container_side_length * 4);
+
+        std::cout << "Packed texture saved to " << output_dir / filename << std::endl;
+    }
+
+    // Write metadata to JSON file
+    std::ofstream json_output(output_dir / "packed_texture.json");
+    json_output << result.dump(4);
+    std::cout << "Metadata saved to " << output_dir / "packed_texture.json" << std::endl;
+
+    std::cout << "Texture packing completed successfully.\n";
+}
+
+std::vector<PackedTextureContainer>
+TexturePacker::pack_texture_blocks_into_containers(std::vector<TextureBlock> &texture_blocks, int container_size) {
+    std::cout << "Starting texture packing into containers. Container size: " << container_size << "x" << container_size
+              << "\n";
+
+    // Sort by minimum side length in descending order
+    std::sort(texture_blocks.begin(), texture_blocks.end(), [](const TextureBlock &a, const TextureBlock &b) {
+        return std::min(a.block.w, a.block.h) > std::min(b.block.w, b.block.h);
+    });
+    std::cout << "Sorted texture blocks by minimum side length (descending order):\n";
+    for (const auto &tb : texture_blocks) {
+        std::cout << "  - TextureBlock: " << tb.texture_path << "\n"
+                  << "      Dimensions: " << tb.block.w << "x" << tb.block.h << "\n";
+    }
+
+    std::vector<PackedTextureContainer> currently_created_packed_texture_containers;
+
+    for (auto &tb : texture_blocks) {
+        std::cout << "Processing TextureBlock: " << tb.texture_path << " with dimensions " << tb.block.w << "x"
+                  << tb.block.h << "\n";
+
+        if (tb.block.w > container_size || tb.block.h > container_size) {
+            std::cerr << "Error: The image " << tb.texture_path << " has dimensions " << tb.block.w << "x" << tb.block.h
+                      << ", but the container is " << container_size << "x" << container_size
+                      << ". Make the container size bigger.\n";
+            continue;
+        }
+
+        bool found_container_to_fit_texture_in = false;
+
+        // Try to fit the texture block into an existing container
+        for (auto &pt_container : currently_created_packed_texture_containers) {
+            std::cout << "  Attempting to fit into an existing container...\n";
+
+            pt_container.packer->fit(tb.block);
+
+            if (tb.block.packed_placement) {
+                std::cout << "    Successfully packed into existing container.\n";
+                for (auto &[subtexture_name, subtexture_data] : tb.subtextures) {
+                    subtexture_data["x"] += tb.block.packed_placement->top_left_x;
+                    subtexture_data["y"] += tb.block.packed_placement->top_left_y;
+                }
+
+                pt_container.packed_texture_blocks.push_back(tb);
+                found_container_to_fit_texture_in = true;
+                break;
+            } else {
+                std::cout << "    Failed to fit into this container.\n";
+            }
+        }
+
+        if (!found_container_to_fit_texture_in) {
+            std::cout << "  Creating a new container for the texture.\n";
+
+            auto new_packer = std::make_shared<SplitPacker>(container_size, container_size);
+            new_packer->fit(tb.block);
+
+            PackedTextureContainer pt(new_packer);
+
+            if (tb.block.packed_placement) {
+                std::cout << "    Successfully packed into the new container.\n";
+                pt.packed_texture_blocks.push_back(tb);
+
+                // No need to update subtexture data, as it's in the top-left corner
+            } else {
+                std::cerr << "    Error: Created a new container, but the texture still couldn't fit.\n";
+            }
+
+            currently_created_packed_texture_containers.push_back(pt);
+        }
+    }
+
+    // Summary of results
+    std::cout << "Packing completed. Created " << currently_created_packed_texture_containers.size()
+              << " containers.\n";
+    for (size_t i = 0; i < currently_created_packed_texture_containers.size(); ++i) {
+        const auto &container = currently_created_packed_texture_containers[i];
+        std::cout << "Container " << i << ":\n";
+        std::cout << "  - Number of packed blocks: " << container.packed_texture_blocks.size() << "\n";
+        for (const auto &block : container.packed_texture_blocks) {
+            std::cout << "    - TextureBlock: " << block.texture_path << "\n"
+                      << "        Dimensions: " << block.block.w << "x" << block.block.h << "\n";
+            if (block.block.packed_placement) {
+                const auto &placement = block.block.packed_placement.value();
+                std::cout << "        Placement: (" << placement.top_left_x << ", " << placement.top_left_y << ")\n";
+            } else {
+                std::cout << "        Placement: Not packed\n";
+            }
+        }
+    }
+
+    return currently_created_packed_texture_containers;
+}
+
+std::vector<TextureBlock>
+TexturePacker::construct_texture_blocks_from_texture_paths(const std::vector<std::string> &texture_paths) {
+    std::vector<TextureBlock> texture_blocks;
+    for (const auto &file_path : texture_paths) {
+        // Load image using stb_image
+        int width, height, channels;
+
+        // we're throwing away the image data here, because we only need width and height really
+        unsigned char *img_data = stbi_load(file_path.c_str(), &width, &height, &channels, 0);
+        if (img_data) {
+            if (is_power_of_two(width) && is_power_of_two(height)) {
+                std::unordered_map<std::string, std::vector<int>> subtextures;
+
+                // Check for associated JSON file
+                std::string json_path = file_path.substr(0, file_path.find_last_of('.')) + ".json";
+                std::ifstream json_file(json_path);
+                if (json_file.is_open()) {
+                    nlohmann::json json;
+                    json_file >> json;
+                    if (json.contains("sub_textures")) {
+
+                        std::unordered_map<std::string, std::vector<int>> subtextures_map;
+
+                        for (auto &[key, value] : json["sub_textures"].items()) {
+                            // Assuming value is a JSON array of integers
+                            if (value.is_array()) {
+                                subtextures_map[key] = value.get<std::vector<int>>();
+                            }
+                        }
+                    }
+                }
+
+                // Append data including the full file path
+                std::cout << "Found texture " << file_path << " with dimensions " << width << "x" << height
+                          << std::endl;
+
+                // here the data gets saved into new memory now.
+                std::vector<unsigned char> image_data(img_data, img_data + width * height * channels);
+
+                // something about subtextures needs to be thought about.
+                /*TextureBlock tb(width, height, file_path, image_data, subtextures);*/
+                TextureBlock tb(width, height, file_path);
+                texture_blocks.push_back(tb);
+
+                stbi_image_free(img_data);
+            } else {
+                // in the future we should stop caring about this.
+                std::cout << "The texture " << file_path << " did not have power-of-two dimensions" << std::endl;
+                stbi_image_free(img_data);
+            }
+        } else {
+            std::cout << "Failed to load texture: " << file_path << std::endl;
+        }
+    }
+
+    return texture_blocks;
+}
+
+void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths) {
+
+    currently_held_texture_paths.insert(currently_held_texture_paths.end(), new_texture_paths.begin(),
+                                        new_texture_paths.end());
+
+    pack_textures(currently_held_texture_paths, this->output_dir, this->container_side_length);
+
+    // clear out anything data which was previously stored
+    file_path_to_packed_texture_info.clear();
+
+    std::string packed_texture_json_path = "assets/packed_textures/packed_texture.json";
     std::string texture_directory = "assets/packed_textures/";
     std::regex texture_pattern("packed_texture_\\d+\\.png");
 
@@ -25,6 +374,7 @@ void TexturePacker::regenerate(const std::string &packed_texture_json_path) {
     /*stbi_set_flip_vertically_on_load(1);*/
 
     // Assuming all textures are the same size; load the first texture to get dimensions
+    std::cerr << "about to load texture: " << packed_texture_paths[0] << std::endl;
     data = stbi_load(packed_texture_paths[0].c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
     if (!data) {
         std::cerr << "Failed to load texture: " << packed_texture_paths[0] << std::endl;
@@ -32,7 +382,7 @@ void TexturePacker::regenerate(const std::string &packed_texture_json_path) {
     }
     stbi_image_free(data);
 
-    parse_json_file(packed_texture_json_path, width, height);
+    set_file_path_to_packed_texture_map(packed_texture_json_path, width, height);
 
     // Initialize the 2D texture array
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, width, height, num_layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -104,7 +454,8 @@ PackedTextureSubTexture TexturePacker::parse_sub_texture(const nlohmann::json &s
     return sub_texture;
 }
 
-void TexturePacker::parse_json_file(const std::string &file_path, unsigned int atlas_width, unsigned int atlas_height) {
+void TexturePacker::set_file_path_to_packed_texture_map(const std::string &file_path, unsigned int atlas_width,
+                                                        unsigned int atlas_height) {
     std::ifstream file(file_path);
     nlohmann::json j;
     file >> j;
