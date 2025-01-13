@@ -41,7 +41,8 @@ TexturePacker::TexturePacker(const std::filesystem::path &textures_directory, co
     regenerate(initial_texture_paths);
 }
 
-std::vector<std::string> TexturePacker::get_texture_paths(const std::filesystem::path &directory, const std::filesystem::path &output_dir) {
+std::vector<std::string> TexturePacker::get_texture_paths(const std::filesystem::path &directory,
+                                                          const std::filesystem::path &output_dir) {
     std::vector<std::string> image_file_paths;
 
     // Walk through the directory and subdirectories
@@ -357,12 +358,14 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
     // clear out anything data which was previously stored
     file_path_to_packed_texture_info.clear();
 
-    std::filesystem::path packed_texture_json_path = std::filesystem::path("assets") / "packed_textures" / "packed_textures.json";
+    std::filesystem::path packed_texture_json_path =
+        std::filesystem::path("assets") / "packed_textures" / "packed_textures.json";
     std::filesystem::path texture_directory = std::filesystem::path("assets") / "packed_textures";
 
     std::regex texture_pattern("packed_texture_\\d+\\.png");
 
-    std::vector<std::filesystem::path> packed_texture_paths = list_files_matching_regex(texture_directory, texture_pattern);
+    std::vector<std::string> packed_texture_paths = list_files_matching_regex(texture_directory, texture_pattern);
+    std::sort(packed_texture_paths.begin(), packed_texture_paths.end());
 
     glGenTextures(1, &texture_array);
     glBindTexture(GL_TEXTURE_2D_ARRAY, texture_array);
@@ -376,7 +379,7 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
 
     // Assuming all textures are the same size; load the first texture to get dimensions
     std::cerr << "about to load texture: " << packed_texture_paths[0] << std::endl;
-    std::string first_matching_texture_path = packed_texture_paths[0].string();
+    std::string first_matching_texture_path = packed_texture_paths[0];
     data = stbi_load(first_matching_texture_path.c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
     if (!data) {
         std::cerr << "Failed to load texture: " << packed_texture_paths[0] << std::endl;
@@ -385,7 +388,6 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
     stbi_image_free(data);
 
     set_file_path_to_packed_texture_map(packed_texture_json_path, width, height);
-
 
     // Initialize the 2D texture array
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, width, height, num_layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -397,7 +399,7 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
 
     // Load each texture layer
     for (int i = 0; i < num_layers; i++) {
-	std::string current_packed_texture_path = packed_texture_paths[i].string();
+        std::string current_packed_texture_path = packed_texture_paths[i];
         data = stbi_load(current_packed_texture_path.c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
         if (data) {
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE, data);
@@ -458,8 +460,8 @@ PackedTextureSubTexture TexturePacker::parse_sub_texture(const nlohmann::json &s
     return sub_texture;
 }
 
-void TexturePacker::set_file_path_to_packed_texture_map(const std::filesystem::path &file_path, unsigned int atlas_width,
-                                                        unsigned int atlas_height) {
+void TexturePacker::set_file_path_to_packed_texture_map(const std::filesystem::path &file_path,
+                                                        unsigned int atlas_width, unsigned int atlas_height) {
     std::ifstream file(file_path);
     nlohmann::json j;
     file >> j;
@@ -531,17 +533,17 @@ PackedTextureSubTexture TexturePacker::get_packed_texture_sub_texture_atlas(cons
 }
 
 size_t TexturePacker::get_atlas_size_of_sub_texture(const std::string &file_path) {
-	    std::cout << "gasost0" << file_path << std::endl;
+    std::cout << "gasost0" << file_path << std::endl;
 
     if (file_path_to_packed_texture_info.contains(file_path)) {
-	    std::cout << "gasost1" << std::endl;
+        std::cout << "gasost1" << std::endl;
 
         auto &texture = file_path_to_packed_texture_info.at(file_path);
-    std::cout << "gasost2" << std::endl;
+        std::cout << "gasost2" << std::endl;
 
         return texture.sub_atlas.size();
     }
-    	    std::cout << "gasost_err" << std::endl;
+    std::cout << "gasost_err" << std::endl;
 
     throw std::runtime_error("File path not found in packed texture: " + file_path);
 }
