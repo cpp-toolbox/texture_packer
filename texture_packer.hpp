@@ -32,11 +32,22 @@ struct PackedTextureContainer {
 
 /// new ^^^
 
+// TODO was working on consructing a function which gives back you texture index
+// rename texture index to packed texture index bounding shit
+// and then in main use that and store that data into IVPTP shit and then
+// when drawing upload that extra data and things should work? try it out on gypsum factor.
+
 struct PackedTextureSubTexture {
-    unsigned int packed_texture_index;
+    int packed_texture_bounding_box_index;
+    int packed_texture_index;
     std::vector<glm::vec2> texture_coordinates;
     // this nesting can occur when we pack a texture atlas, it is only ever one level deep
     std::map<std::string, PackedTextureSubTexture> sub_atlas;
+    // measured in pixels
+    int top_left_x;
+    int top_left_y;
+    int width;
+    int height;
 };
 
 class TexturePacker {
@@ -55,8 +66,8 @@ class TexturePacker {
     std::vector<PackedTextureContainer> pack_texture_blocks_into_containers(std::vector<TextureBlock> &texture_blocks,
                                                                             int container_size);
 
-
-    std::vector<std::string> get_texture_paths(const std::filesystem::path &directory, const std::filesystem::path &output_dir);
+    std::vector<std::string> get_texture_paths(const std::filesystem::path &directory,
+                                               const std::filesystem::path &output_dir);
 
     std::vector<TextureBlock>
     construct_texture_blocks_from_texture_paths(const std::vector<std::string> &texture_paths);
@@ -64,6 +75,7 @@ class TexturePacker {
     PackedTextureSubTexture get_packed_texture_sub_texture(const std::string &file_path);
 
     int get_packed_texture_index_of_texture(const std::string &file_path);
+    int get_packed_texture_bounding_box_index_of_texture(const std::string &texture_path);
 
     glm::vec2 get_packed_texture_coordinate(const std::string &file_path, const glm::vec2 &texture_coordinate);
 
@@ -82,13 +94,20 @@ class TexturePacker {
     const std::filesystem::path &output_dir;
     int container_side_length;
 
+    std::vector<glm::vec4> texture_index_to_bounding_box;
+
   private:
     void set_file_path_to_packed_texture_map(const std::filesystem::path &file_path, unsigned int atlas_width,
                                              unsigned int atlas_height);
-    PackedTextureSubTexture parse_sub_texture(const nlohmann::json &sub_texture_json, int atlas_width,
-                                              int atlas_height);
+
+    void populate_texture_index_to_bounding_box();
+
+    PackedTextureSubTexture parse_sub_texture(const nlohmann::json &sub_texture_json, int atlas_width, int atlas_height,
+                                              int texture_index);
     GLuint texture_array;
     std::map<std::string, PackedTextureSubTexture> file_path_to_packed_texture_info;
+    // a texture index is simply a unique identifier given to each texture path
+    // note that it has nothing ot do with a packed index or anything like that
 };
 
 #endif // TEXTURE_PACKER_HPP

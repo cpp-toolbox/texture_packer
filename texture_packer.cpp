@@ -13,6 +13,11 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <string>
+#include <map>
+#include <stdexcept>
+#include <glm/vec2.hpp>
+#include <vector>
 
 void create_directory_if_needed(const std::filesystem::path &output_dir) {
     // Check if the path is empty before proceeding
@@ -72,11 +77,9 @@ bool is_power_of_two(int n) { return n > 0 && (n & (n - 1)) == 0; }
 
 void TexturePacker::pack_textures(const std::vector<std::string> &texture_paths,
                                   const std::filesystem::path &output_dir, int container_side_length) {
-    std::cout << "Starting texture packing with " << texture_paths.size() << " textures.\n";
 
     // Step 1: Construct texture blocks from the provided texture paths
     std::vector<TextureBlock> texture_blocks = construct_texture_blocks_from_texture_paths(texture_paths);
-    std::cout << "Constructed " << texture_blocks.size() << " texture blocks:\n";
     for (const auto &block : texture_blocks) {
         std::cout << "  - TextureBlock: " << block.texture_path << "\n"
                   << "      Dimensions: " << block.block.w << "x" << block.block.h << "\n"
@@ -357,6 +360,7 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
 
     // clear out anything data which was previously stored
     file_path_to_packed_texture_info.clear();
+    texture_index_to_bounding_box.clear();
 
     std::filesystem::path packed_texture_json_path =
         std::filesystem::path("assets") / "packed_textures" / "packed_textures.json";
@@ -367,15 +371,13 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
     std::vector<std::string> packed_texture_paths = list_files_matching_regex(texture_directory, texture_pattern);
     std::sort(packed_texture_paths.begin(), packed_texture_paths.end());
 
+    // I think this uniform doesn't have to be bound because its texture unit is 0 and it works straight away?
     glGenTextures(1, &texture_array);
     glBindTexture(GL_TEXTURE_2D_ARRAY, texture_array);
 
     int width, height, nrChannels;
     unsigned char *data;
     int num_layers = static_cast<int>(packed_texture_paths.size());
-
-    /*// assuming that it loads in upside down*/
-    /*stbi_set_flip_vertically_on_load(1);*/
 
     // Assuming all textures are the same size; load the first texture to get dimensions
     std::cerr << "about to load texture: " << packed_texture_paths[0] << std::endl;
@@ -388,8 +390,10 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
     stbi_image_free(data);
 
     set_file_path_to_packed_texture_map(packed_texture_json_path, width, height);
+    populate_texture_index_to_bounding_box();
+    std::map<std::string, PackedTextureSubTexture> file_path_to_packed_texture_info;
 
-    // Initialize the 2D texture array
+    // initialize the 2d texture array
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, width, height, num_layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -428,17 +432,23 @@ std::vector<glm::vec2> compute_texture_coordinates(float x, float y, float width
 }
 
 PackedTextureSubTexture TexturePacker::parse_sub_texture(const nlohmann::json &sub_texture_json, int atlas_width,
-                                                         int atlas_height) {
+                                                         int atlas_height, int texture_index) {
     PackedTextureSubTexture sub_texture;
-    int x = sub_texture_json.at("x").get<int>();
-    int y = sub_texture_json.at("y").get<int>();
+    int top_left_x = sub_texture_json.at("x").get<int>();
+    int top_left_y = sub_texture_json.at("y").get<int>();
     int width = sub_texture_json.at("width").get<int>();
     int height = sub_texture_json.at("height").get<int>();
     int packed_texture_index = sub_texture_json.at("container_index").get<unsigned int>();
 
     // regular images packed in
-    sub_texture.texture_coordinates = compute_texture_coordinates(x, y, width, height, atlas_width, atlas_height);
+    sub_texture.texture_coordinates =
+        compute_texture_coordinates(top_left_x, top_left_y, width, height, atlas_width, atlas_height);
+    sub_texture.packed_texture_bounding_box_index = texture_index;
     sub_texture.packed_texture_index = packed_texture_index;
+    sub_texture.top_left_x = top_left_x;
+    sub_texture.top_left_y = top_left_y;
+    sub_texture.width = width;
+    sub_texture.height = height;
 
     // sub texture is a texture atlas
     // things that were texture atlases, that also got packed in (one level of recursion)
@@ -466,15 +476,49 @@ void TexturePacker::set_file_path_to_packed_texture_map(const std::filesystem::p
     nlohmann::json j;
     file >> j;
 
+    int texture_index = 0;
     for (const auto &[path, texture_info] : j["sub_textures"].items()) {
-        std::cout << "super working on : " << path << std::endl;
-        file_path_to_packed_texture_info[path] = parse_sub_texture(texture_info, atlas_width, atlas_height);
+        file_path_to_packed_texture_info[path] =
+            parse_sub_texture(texture_info, atlas_width, atlas_height, texture_index);
+        texture_index++;
+    }
+}
+
+void TexturePacker::populate_texture_index_to_bounding_box() {
+    texture_index_to_bounding_box.resize(file_path_to_packed_texture_info.size());
+    for (const auto &[file_path, sub_texture] : file_path_to_packed_texture_info) {
+        int packed_texture_bounding_box_index = sub_texture.packed_texture_bounding_box_index;
+
+        // construct bounding box (tlx, tly, width, height) and convert everyhting into 0, 1 space.
+        glm::vec4 bounding_box(static_cast<float>(sub_texture.top_left_x) / container_side_length,
+                               static_cast<float>(sub_texture.top_left_y) / container_side_length,
+                               static_cast<float>(sub_texture.width) / container_side_length,
+                               static_cast<float>(sub_texture.height) / container_side_length);
+
+        texture_index_to_bounding_box[packed_texture_bounding_box_index] = bounding_box;
     }
 }
 
 int TexturePacker::get_packed_texture_index_of_texture(const std::string &file_path) {
     PackedTextureSubTexture packed_texture = get_packed_texture_sub_texture(file_path);
     return packed_texture.packed_texture_index;
+}
+
+/**
+ * @brief Finds the texture index of a given texture path from a map of packed texture information.
+ *
+ * @param file_path_to_packed_texture_info A map linking texture paths to their corresponding PackedTextureSubTexture.
+ * @param texture_path The path of the texture to look for.
+ * @return The texture index of the corresponding PackedTextureSubTexture.
+ * @throws std::runtime_error If the texture path is not found in the map.
+ */
+int TexturePacker::get_packed_texture_bounding_box_index_of_texture(const std::string &texture_path) {
+    auto it = file_path_to_packed_texture_info.find(texture_path);
+    if (it != file_path_to_packed_texture_info.end()) {
+        return it->second.packed_texture_bounding_box_index;
+    } else {
+        throw std::runtime_error("Texture path not found: " + texture_path);
+    }
 }
 
 std::vector<glm::vec2>
@@ -533,17 +577,13 @@ PackedTextureSubTexture TexturePacker::get_packed_texture_sub_texture_atlas(cons
 }
 
 size_t TexturePacker::get_atlas_size_of_sub_texture(const std::string &file_path) {
-    std::cout << "gasost0" << file_path << std::endl;
 
     if (file_path_to_packed_texture_info.contains(file_path)) {
-        std::cout << "gasost1" << std::endl;
 
         auto &texture = file_path_to_packed_texture_info.at(file_path);
-        std::cout << "gasost2" << std::endl;
 
         return texture.sub_atlas.size();
     }
-    std::cout << "gasost_err" << std::endl;
 
     throw std::runtime_error("File path not found in packed texture: " + file_path);
 }
