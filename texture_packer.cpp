@@ -381,14 +381,15 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
     int num_layers = static_cast<int>(packed_texture_paths.size());
 
     // Assuming all textures are the same size; load the first texture to get dimensions
-    std::cerr << "about to load texture: " << packed_texture_paths[0] << std::endl;
-    std::string first_matching_texture_path = packed_texture_paths[0];
+    std::cerr << "about to load texture: " << packed_texture_paths[0].string() << std::endl;
+    std::string first_matching_texture_path = packed_texture_paths[0].string();
     data = stbi_load(first_matching_texture_path.c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
     if (!data) {
-        std::cerr << "Failed to load texture: " << packed_texture_paths[0] << std::endl;
+        std::cerr << "Failed to load texture: " << packed_texture_paths[0].string() << std::endl;
         return;
     }
     stbi_image_free(data);
+
 
     set_file_path_to_packed_texture_map(packed_texture_json_path, width, height);
     populate_texture_index_to_bounding_box();
@@ -404,7 +405,7 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
 
     // Load each texture layer
     for (int i = 0; i < num_layers; i++) {
-        std::string current_packed_texture_path = packed_texture_paths[i];
+        std::string current_packed_texture_path = packed_texture_paths[i].string();
         data = stbi_load(current_packed_texture_path.c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
         if (data) {
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE, data);
@@ -413,6 +414,7 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
             std::cerr << "Failed to load texture: " << current_packed_texture_path << std::endl;
         }
     }
+
 }
 
 std::vector<glm::vec2> compute_texture_coordinates(float x, float y, float width, float height, int atlas_width,
