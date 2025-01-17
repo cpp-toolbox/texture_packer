@@ -104,7 +104,8 @@ class TexturePacker {
 
     PackedTextureSubTexture parse_sub_texture(const nlohmann::json &sub_texture_json, int atlas_width, int atlas_height,
                                               int texture_index);
-    GLuint texture_array;
+    GLuint packed_texture_array_gl_id;
+    GLuint packed_texture_bounding_boxes_gl_id;
     std::map<std::string, PackedTextureSubTexture> file_path_to_packed_texture_info;
     // a texture index is simply a unique identifier given to each texture path
     // note that it has nothing ot do with a packed index or anything like that

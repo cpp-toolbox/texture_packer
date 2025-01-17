@@ -373,8 +373,9 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
     std::sort(packed_texture_paths.begin(), packed_texture_paths.end());
 
     // I think this uniform doesn't have to be bound because its texture unit is 0 and it works straight away?
-    glGenTextures(1, &texture_array);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, texture_array);
+    glActiveTexture(GL_TEXTURE0);
+    glGenTextures(1, &packed_texture_array_gl_id);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, packed_texture_array_gl_id);
 
     int width, height, nrChannels;
     unsigned char *data;
@@ -389,7 +390,6 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
         return;
     }
     stbi_image_free(data);
-
 
     set_file_path_to_packed_texture_map(packed_texture_json_path, width, height);
     populate_texture_index_to_bounding_box();
@@ -414,7 +414,19 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
             std::cerr << "Failed to load texture: " << current_packed_texture_path << std::endl;
         }
     }
+    // done loading up packed textures, starting to load up bounding boxes.
+    glActiveTexture(GL_TEXTURE1);
+    glGenTextures(1, &packed_texture_bounding_boxes_gl_id);
+    glBindTexture(GL_TEXTURE_1D, packed_texture_bounding_boxes_gl_id);
 
+    int MAX_NUM_TEXTURES = 1024;
+
+    glTexImage1D(GL_TEXTURE_1D, 0, GL_RGBA32F, MAX_NUM_TEXTURES, 0, GL_RGBA, GL_FLOAT,
+                 texture_index_to_bounding_box.data());
+
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 }
 
 std::vector<glm::vec2> compute_texture_coordinates(float x, float y, float width, float height, int atlas_width,
@@ -591,4 +603,4 @@ size_t TexturePacker::get_atlas_size_of_sub_texture(const std::string &file_path
     throw std::runtime_error("File path not found in packed texture: " + file_path);
 }
 
-void TexturePacker::bind_texture_array() { glBindTexture(GL_TEXTURE_2D_ARRAY, texture_array); }
+void TexturePacker::bind_texture_array() { glBindTexture(GL_TEXTURE_2D_ARRAY, packed_texture_array_gl_id); }
