@@ -235,9 +235,10 @@ TexturePacker::pack_texture_blocks_into_containers(std::vector<TextureBlock> &te
 
             pt_container.packer->fit(tb.block);
 
+            // if the block has been fit in
             if (tb.block.packed_placement) {
                 std::cout << "    Successfully packed into existing container.\n";
-                for (auto &[subtexture_name, subtexture_data] : tb.subtextures) {
+                for (auto &[_, subtexture_data] : tb.subtextures) {
                     subtexture_data["x"] += tb.block.packed_placement->top_left_x;
                     subtexture_data["y"] += tb.block.packed_placement->top_left_y;
                 }
@@ -304,24 +305,23 @@ TexturePacker::construct_texture_blocks_from_texture_paths(const std::vector<std
         unsigned char *img_data = stbi_load(file_path.c_str(), &width, &height, &channels, 0);
         if (img_data) {
             if (true) {
-                std::unordered_map<std::string, std::vector<int>> subtextures;
+                std::map<std::string, std::map<std::string, float>> subtextures;
 
                 // Check for associated JSON file
                 std::string json_path = file_path.substr(0, file_path.find_last_of('.')) + ".json";
                 std::ifstream json_file(json_path);
+
                 if (json_file.is_open()) {
                     nlohmann::json json;
                     json_file >> json;
                     if (json.contains("sub_textures")) {
-
-                        std::unordered_map<std::string, std::vector<int>> subtextures_map;
-
-                        for (auto &[key, value] : json["sub_textures"].items()) {
-                            // Assuming value is a JSON array of integers
-                            if (value.is_array()) {
-                                subtextures_map[key] = value.get<std::vector<int>>();
-                            }
-                        }
+                        subtextures = json["sub_textures"];
+                        /*for (auto &[key, value] : json["sub_textures"].items()) {*/
+                        /*    // Assuming value is a JSON array of integers*/
+                        /*    if (value.is_array()) {*/
+                        /*        subtextures[key] = value.get<std::vector<int>>();*/
+                        /*    }*/
+                        /*}*/
                     }
                 }
 
@@ -335,6 +335,7 @@ TexturePacker::construct_texture_blocks_from_texture_paths(const std::vector<std
                 // something about subtextures needs to be thought about.
                 /*TextureBlock tb(width, height, file_path, image_data, subtextures);*/
                 TextureBlock tb(width, height, file_path);
+                tb.subtextures = subtextures;
                 texture_blocks.push_back(tb);
 
                 stbi_image_free(img_data);
