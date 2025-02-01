@@ -7,6 +7,22 @@ don't forget to the include the stb header in your `main.cpp`
 #include <stb_image.h>
 ```
 
+# usage
+
+To use this you give the texture packer the directory that contains your images, then you pass the place wher eyou want to store the packed images, as well as the side length of the containers, each container shoudl have a power of two dimension and they will be squares. 
+```cpp
+    const auto textures_directory = std::filesystem::path("assets");
+    std::filesystem::path output_dir = std::filesystem::path("assets") / "packed_textures";
+    int container_side_length = 1024;
+
+    TexturePacker texture_packer(textures_directory, output_dir, container_side_length);
+    shader_cache.set_uniform(ShaderType::CWL_V_TRANSFORMATION_TEXTURE_PACKED,
+                             ShaderUniformVariable::PACKED_TEXTURE_BOUNDING_BOXES, 1);
+```
+
+After createing a texture packer you must bind the uniform to 1, because it is a sampler and we bound that data to GL_TEXTURE1 when building the texture packer
+
+
 ## texture coordinates 
 For the sake of brevity denote texture coordinate as tc. Normally if you want a texture to tile over your geometry you simply make the tc's outside of the [0, 1]x[0, 1] range. By doing that and setting specific opengl options the texture will automatically tile on that geometry.
 
