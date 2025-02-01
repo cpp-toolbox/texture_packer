@@ -4,8 +4,11 @@ don't forget to the include the stb header in your `main.cpp`
 
 ```cpp
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image.h>
+#include <stb_image_write.h>
 ```
+
 
 ## texture coordinates 
 For the sake of brevity denote texture coordinate as tc. Normally if you want a texture to tile over your geometry you simply make the tc's outside of the [0, 1]x[0, 1] range. By doing that and setting specific opengl options the texture will automatically tile on that geometry.
