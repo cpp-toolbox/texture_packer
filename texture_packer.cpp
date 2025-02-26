@@ -470,15 +470,19 @@ PackedTextureSubTexture TexturePacker::parse_sub_texture(const nlohmann::json &s
     // things that were texture atlases, that also got packed in (one level of recursion)
     if (sub_texture_json.contains("sub_textures")) {
         for (auto &[subtexture_name, sub_atlas_json] : sub_texture_json.at("sub_textures").items()) {
-            float sub_x = sub_atlas_json.at("x").get<float>();
-            float sub_y = sub_atlas_json.at("y").get<float>();
-            float sub_width = sub_atlas_json.at("width").get<float>();
-            float sub_height = sub_atlas_json.at("height").get<float>();
+            float sub_top_left_x = sub_atlas_json.at("x").get<int>();
+            float sub_top_left_y = sub_atlas_json.at("y").get<int>();
+            float sub_width = sub_atlas_json.at("width").get<int>();
+            float sub_height = sub_atlas_json.at("height").get<int>();
 
             PackedTextureSubTexture sub_atlas_sub_texture;
+            sub_atlas_sub_texture.top_left_x = sub_top_left_x;
+            sub_atlas_sub_texture.top_left_y = sub_top_left_y;
             sub_atlas_sub_texture.packed_texture_index = packed_texture_index;
-            sub_atlas_sub_texture.texture_coordinates =
-                compute_texture_coordinates(sub_x, sub_y, sub_width, sub_height, atlas_width, atlas_height);
+            sub_atlas_sub_texture.texture_coordinates = compute_texture_coordinates(
+                sub_top_left_x, sub_top_left_y, sub_width, sub_height, atlas_width, atlas_height);
+            sub_atlas_sub_texture.width = sub_width;
+            sub_atlas_sub_texture.height = sub_height;
             sub_texture.sub_atlas[subtexture_name] = sub_atlas_sub_texture;
         }
     }

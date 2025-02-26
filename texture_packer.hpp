@@ -10,6 +10,10 @@
 #include <string>
 #include <glm/glm.hpp>
 
+#include <iostream>
+#include <vector>
+#include <map>
+
 #include "sbpt_generated_includes.hpp"
 #include "split_packer.hpp"
 
@@ -41,13 +45,33 @@ struct PackedTextureSubTexture {
     int packed_texture_bounding_box_index;
     int packed_texture_index;
     std::vector<glm::vec2> texture_coordinates;
-    // this nesting can occur when we pack a texture atlas, it is only ever one level deep
     std::map<std::string, PackedTextureSubTexture> sub_atlas;
-    // measured in pixels
     int top_left_x;
     int top_left_y;
     int width;
     int height;
+
+    friend std::ostream &operator<<(std::ostream &os, const PackedTextureSubTexture &pts) {
+        os << "PackedTextureSubTexture {"
+           << "\n  Bounding Box Index: " << pts.packed_texture_bounding_box_index
+           << "\n  Texture Index: " << pts.packed_texture_index << "\n  Top Left: (" << pts.top_left_x << ", "
+           << pts.top_left_y << ")"
+           << "\n  Size: " << pts.width << "x" << pts.height << "\n  Texture Coordinates: [";
+
+        for (size_t i = 0; i < pts.texture_coordinates.size(); ++i) {
+            os << "(" << pts.texture_coordinates[i].x << ", " << pts.texture_coordinates[i].y << ")";
+            if (i < pts.texture_coordinates.size() - 1)
+                os << ", ";
+        }
+
+        os << "]\n  Sub-Atlas: {";
+        for (const auto &[key, sub_texture] : pts.sub_atlas) {
+            os << "\n    \"" << key << "\": " << sub_texture;
+        }
+        os << "\n  }\n}";
+
+        return os;
+    }
 };
 
 class TexturePacker {
