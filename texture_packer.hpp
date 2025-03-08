@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 #include <string>
+#include <filesystem>
 #include <glm/glm.hpp>
 
 #include <iostream>
