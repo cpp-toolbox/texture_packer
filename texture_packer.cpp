@@ -562,6 +562,10 @@ glm::vec2 TexturePacker::get_packed_texture_coordinate(const std::string &file_p
         throw std::runtime_error("Packed texture must have at least two opposing corners defined.");
     }
 
+    // NOTE: this function will invert the passed in texture coordinates vertically this is so that
+    // it will work with the coordinate system in opengl, note that ifyou run this twice things will end up
+    // upside down, such as taking from the texture_atlas first, keep in mind
+
     // opposing corners
     const glm::vec2 &corner_1 = packed_texture.texture_coordinates[2];
     const glm::vec2 &corner_2 = packed_texture.texture_coordinates[0];
