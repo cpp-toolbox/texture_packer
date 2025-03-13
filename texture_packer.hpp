@@ -114,8 +114,8 @@ class TexturePacker {
     void bind_texture_array();
 
     std::vector<std::string> currently_held_texture_paths;
-    const std::filesystem::path &textures_directory;
-    const std::filesystem::path &output_dir;
+    std::filesystem::path textures_directory;
+    std::filesystem::path output_dir;
     int container_side_length;
 
     std::vector<glm::vec4> texture_index_to_bounding_box;
