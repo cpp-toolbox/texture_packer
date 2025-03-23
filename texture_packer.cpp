@@ -421,6 +421,15 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
     glBindTexture(GL_TEXTURE_1D, packed_texture_bounding_boxes_gl_id);
 
     int MAX_NUM_TEXTURES = 1024;
+    // Check if the texture data exceeds the maximum texture size
+    if (texture_index_to_bounding_box.size() > MAX_NUM_TEXTURES) {
+        std::cerr << "Error: Too many textures, exceeds MAX_NUM_TEXTURES." << std::endl;
+        // Resize to fit the maximum size
+        texture_index_to_bounding_box.resize(MAX_NUM_TEXTURES);
+    } else if (texture_index_to_bounding_box.size() < MAX_NUM_TEXTURES) {
+        // Resize to fit the maximum size and fill the new space with zeros
+        texture_index_to_bounding_box.resize(MAX_NUM_TEXTURES, glm::vec4(0.0f));
+    }
 
     glTexImage1D(GL_TEXTURE_1D, 0, GL_RGBA32F, MAX_NUM_TEXTURES, 0, GL_RGBA, GL_FLOAT,
                  texture_index_to_bounding_box.data());
@@ -505,7 +514,16 @@ void TexturePacker::set_file_path_to_packed_texture_map(const std::filesystem::p
 }
 
 void TexturePacker::populate_texture_index_to_bounding_box() {
-    texture_index_to_bounding_box.resize(file_path_to_packed_texture_info.size());
+    // find the maximum index from the packed textures
+    int max_index = 0;
+    for (const auto &[file_path, sub_texture] : file_path_to_packed_texture_info) {
+        max_index = std::max(max_index, sub_texture.packed_texture_bounding_box_index);
+    }
+
+    // resize the vector to accommodate the maximum index
+    texture_index_to_bounding_box.resize(max_index + 1);
+    std::cout << "there are " << file_path_to_packed_texture_info.size() << " many packed textures" << std::endl;
+    /*texture_index_to_bounding_box.resize(file_path_to_packed_texture_info.size());*/
     for (const auto &[file_path, sub_texture] : file_path_to_packed_texture_info) {
         int packed_texture_bounding_box_index = sub_texture.packed_texture_bounding_box_index;
 
@@ -515,6 +533,7 @@ void TexturePacker::populate_texture_index_to_bounding_box() {
                                static_cast<float>(sub_texture.width) / container_side_length,
                                static_cast<float>(sub_texture.height) / container_side_length);
 
+        std::cout << "accessing at " << packed_texture_bounding_box_index << std::endl;
         texture_index_to_bounding_box[packed_texture_bounding_box_index] = bounding_box;
     }
 }
