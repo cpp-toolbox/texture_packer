@@ -367,10 +367,8 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
         std::filesystem::path("assets") / "packed_textures" / "packed_textures.json";
     std::filesystem::path texture_directory = std::filesystem::path("assets") / "packed_textures";
 
-    std::regex texture_pattern("packed_texture_\\d+\\.png");
-
     std::vector<std::filesystem::path> packed_texture_paths =
-        list_files_matching_regex(texture_directory, texture_pattern);
+        fs_utils::list_files_matching_regex(texture_directory, "packed_texture_\\d+\\.png");
     std::sort(packed_texture_paths.begin(), packed_texture_paths.end());
 
     // I think this uniform doesn't have to be bound because its texture unit is 0 and it works straight away?
