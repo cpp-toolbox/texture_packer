@@ -56,8 +56,9 @@ std::vector<std::string> TexturePacker::get_texture_paths(const std::filesystem:
             std::string file = entry.path().filename().string();
 
             // Check if file is a supported image type
-            if (file.size() > 4 && (file.substr(file.size() - 4) == ".png" || file.substr(file.size() - 4) == ".jpg" ||
-                                    file.substr(file.size() - 5) == ".jpeg")) {
+            if (file.size() > 4 &&
+                (file.substr(file.size() - 4) == ".png" || file.substr(file.size() - 4) == ".jpg" ||
+                 file.substr(file.size() - 4) == ".tga" || file.substr(file.size() - 5) == ".jpeg")) {
                 std::string file_path = entry.path().string();
 
                 // Skip files inside the output directory
