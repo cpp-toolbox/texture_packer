@@ -75,6 +75,13 @@ struct PackedTextureSubTexture {
     }
 };
 
+/**
+ * @TODO as of right now the texture packer has a huge problem which is that its run everytime the program starts, in
+ * order to correct this we need to improve our fs_utils so that we can save the state of a whole directory to file,
+ * only saving the metadata such as when a file was last created or modified, and the ability to read this and then see
+ * if new files have been created or modified, whenever this is true we run the texture packer, when this is not true,
+ * then all the texture are still packed so we don't have to do anything else.
+ */
 class TexturePacker {
   public:
     TexturePacker(const std::filesystem::path &textures_directory, const std::filesystem::path &output_dir,
