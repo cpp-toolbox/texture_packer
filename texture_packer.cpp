@@ -19,10 +19,11 @@
 #include <glm/vec2.hpp>
 #include <vector>
 
+// NOTE: this can probably be replaced by something in fs utils later on
 void create_directory_if_needed(const std::filesystem::path &output_dir) {
     // Check if the path is empty before proceeding
     if (output_dir.empty()) {
-        std::cerr << "Error: Provided directory path is empty!" << std::endl;
+        global_logger.error("Provided directory path is empty!");
         return;
     }
 
@@ -32,7 +33,7 @@ void create_directory_if_needed(const std::filesystem::path &output_dir) {
             // Create the directory if it does not exist
             std::filesystem::create_directories(output_dir);
         } catch (const std::filesystem::filesystem_error &e) {
-            std::cerr << "Error creating directory: " << e.what() << std::endl;
+            global_logger.error("Error creating directory: {}", e.what());
         }
     }
 }
@@ -48,6 +49,7 @@ TexturePacker::TexturePacker(const std::filesystem::path &textures_directory, co
 
 std::vector<std::string> TexturePacker::get_texture_paths(const std::filesystem::path &directory,
                                                           const std::filesystem::path &output_dir) {
+    LogSection _(global_logger, "get_texture_paths", true);
     std::vector<std::string> image_file_paths;
 
     // Walk through the directory and subdirectories
@@ -63,7 +65,7 @@ std::vector<std::string> TexturePacker::get_texture_paths(const std::filesystem:
 
                 // Skip files inside the output directory
                 if (std::filesystem::equivalent(entry.path().parent_path(), output_dir)) {
-                    std::cout << "Skipping file inside output directory: " << file_path << std::endl;
+                    global_logger.info("Skipping file inside output directory: {}", file_path);
                     continue;
                 }
 
@@ -82,46 +84,48 @@ void TexturePacker::pack_textures(const std::vector<std::string> &texture_paths,
     // Step 1: Construct texture blocks from the provided texture paths
     std::vector<TextureBlock> texture_blocks = construct_texture_blocks_from_texture_paths(texture_paths);
     for (const auto &block : texture_blocks) {
-        std::cout << "  - TextureBlock: " << block.texture_path << "\n"
-                  << "      Dimensions: " << block.block.w << "x" << block.block.h << "\n"
-                  << "      Subtextures: [\n";
+        global_logger.info("  - TextureBlock: {}", block.texture_path);
+        global_logger.info("      Dimensions: {}x{}", block.block.w, block.block.h);
+        global_logger.info("      Subtextures: [");
         for (const auto &[key, value] : block.subtextures) {
-            std::cout << "        \"" << key << "\": {";
+            std::string subtexture_str = "        \"" + key + "\": {";
             for (const auto &[sub_key, sub_value] : value) {
-                std::cout << " \"" << sub_key << "\": " << sub_value << ",";
+                subtexture_str += " \"" + sub_key + "\": " + std::to_string(sub_value) + ",";
             }
-            std::cout << " }\n";
+            subtexture_str += " }";
+            global_logger.info("{}", subtexture_str);
         }
-        std::cout << "      ]\n";
+        global_logger.info("      ]");
     }
 
     // Step 2: Pack the texture blocks into containers
     std::vector<PackedTextureContainer> packed_texture_containers =
         pack_texture_blocks_into_containers(texture_blocks, container_side_length);
-    std::cout << "Packed texture blocks into " << packed_texture_containers.size() << " containers:\n";
+    global_logger.info("Packed texture blocks into {} containers:", packed_texture_containers.size());
 
     for (size_t i = 0; i < packed_texture_containers.size(); ++i) {
         const auto &container = packed_texture_containers[i];
-        std::cout << "Container " << i << ":\n";
-        std::cout << "  - Number of packed blocks: " << container.packed_texture_blocks.size() << "\n";
+        global_logger.info("Container {}:", i);
+        global_logger.info("  - Number of packed blocks: {}", container.packed_texture_blocks.size());
         for (const auto &block : container.packed_texture_blocks) {
-            std::cout << "    - TextureBlock: " << block.texture_path << "\n"
-                      << "        Dimensions: " << block.block.w << "x" << block.block.h << "\n";
+            global_logger.info("    - TextureBlock: {}", block.texture_path);
+            global_logger.info("        Dimensions: {}x{}", block.block.w, block.block.h);
             if (block.block.packed_placement) {
                 const auto &placement = block.block.packed_placement.value();
-                std::cout << "        Placement: (" << placement.top_left_x << ", " << placement.top_left_y << ")\n";
+                global_logger.info("        Placement: ({}, {})", placement.top_left_x, placement.top_left_y);
             } else {
-                std::cout << "        Placement: Not packed\n";
+                global_logger.info("        Placement: Not packed");
             }
-            std::cout << "        Subtextures: [\n";
+            global_logger.info("        Subtextures: [");
             for (const auto &[key, value] : block.subtextures) {
-                std::cout << "          \"" << key << "\": {";
+                std::string subtexture_str = "          \"" + key + "\": {";
                 for (const auto &[sub_key, sub_value] : value) {
-                    std::cout << " \"" << sub_key << "\": " << sub_value << ",";
+                    subtexture_str += " \"" + sub_key + "\": " + std::to_string(sub_value) + ",";
                 }
-                std::cout << " }\n";
+                subtexture_str += " }";
+                global_logger.info("{}", subtexture_str);
             }
-            std::cout << "        ]\n";
+            global_logger.info("        ]");
         }
     }
 
@@ -130,20 +134,20 @@ void TexturePacker::pack_textures(const std::vector<std::string> &texture_paths,
 
     for (size_t i = 0; i < packed_texture_containers.size(); ++i) {
         const auto &container = packed_texture_containers[i];
-        std::cout << "Processing container " << i << " with " << container.packed_texture_blocks.size()
-                  << " texture blocks.\n";
+        global_logger.info("Processing container {} with {} texture blocks.", i,
+                           container.packed_texture_blocks.size());
 
         std::vector<uint8_t> image_data(container_side_length * container_side_length * 4, 0); // Assuming RGBA format
 
         for (const auto &block : container.packed_texture_blocks) {
             if (!block.block.packed_placement.has_value()) {
-                std::cout << "Skipping block without placement.\n";
+                global_logger.warn("Skipping block without placement: {}", block.texture_path);
                 continue; // Skip blocks that were not successfully packed
             }
 
             const auto &placement = block.block.packed_placement.value();
-            std::cout << "Processing block: " << block.texture_path << " at position (" << placement.top_left_x << ", "
-                      << placement.top_left_y << ").\n";
+            global_logger.info("Processing block: {} at position ({}, {})", block.texture_path, placement.top_left_x,
+                               placement.top_left_y);
 
             // Load the block image (e.g., using stb_image)
             int img_width, img_height, channels;
@@ -151,12 +155,11 @@ void TexturePacker::pack_textures(const std::vector<std::string> &texture_paths,
                 stbi_load(block.texture_path.c_str(), &img_width, &img_height, &channels, 4), stbi_image_free);
 
             if (!block_image) {
-                std::cerr << "Failed to load texture: " << block.texture_path << std::endl;
+                global_logger.error("Failed to load texture: {}", block.texture_path);
                 continue;
             }
 
-            std::cout << "Loaded image: " << block.texture_path << " with dimensions (" << img_width << "x"
-                      << img_height << ").\n";
+            global_logger.info("Loaded image: {} with dimensions ({}x{})", block.texture_path, img_width, img_height);
 
             // Copy the block image into the container image at the specified position
             for (int row = 0; row < img_height; ++row) {
@@ -166,7 +169,7 @@ void TexturePacker::pack_textures(const std::vector<std::string> &texture_paths,
                         int dest_y = placement.top_left_y + row;
                         if (dest_x < 0 || dest_x >= container_side_length || dest_y < 0 ||
                             dest_y >= container_side_length) {
-                            std::cerr << "Out-of-bounds access detected for block: " << block.texture_path << "\n";
+                            global_logger.error("Out-of-bounds access detected for block: {}", block.texture_path);
                             continue;
                         }
                         image_data[(dest_y * container_side_length + dest_x) * 4 + channel] =
@@ -189,42 +192,42 @@ void TexturePacker::pack_textures(const std::vector<std::string> &texture_paths,
         stbi_write_png((output_dir / filename).string().c_str(), container_side_length, container_side_length, 4,
                        image_data.data(), container_side_length * 4);
 
-        std::cout << "Packed texture saved to " << output_dir / filename << std::endl;
+        global_logger.info("Packed texture saved to {}", (output_dir / filename).string());
     }
 
     // Write metadata to JSON file
     std::ofstream json_output(output_dir / "packed_textures.json");
     json_output << result.dump(4);
-    std::cout << "Metadata saved to " << output_dir / "packed_textures.json" << std::endl;
+    global_logger.info("Metadata saved to {}", (output_dir / "packed_textures.json").string());
 
-    std::cout << "Texture packing completed successfully.\n";
+    global_logger.info("Texture packing completed successfully.");
 }
 
 std::vector<PackedTextureContainer>
 TexturePacker::pack_texture_blocks_into_containers(std::vector<TextureBlock> &texture_blocks, int container_size) {
-    std::cout << "Starting texture packing into containers. Container size: " << container_size << "x" << container_size
-              << "\n";
+    global_logger.info("Starting texture packing into containers. Container size: {}x{}", container_size,
+                       container_size);
 
     // Sort by minimum side length in descending order
     std::sort(texture_blocks.begin(), texture_blocks.end(), [](const TextureBlock &a, const TextureBlock &b) {
         return std::min(a.block.w, a.block.h) > std::min(b.block.w, b.block.h);
     });
-    std::cout << "Sorted texture blocks by minimum side length (descending order):\n";
+
+    global_logger.info("Sorted texture blocks by minimum side length (descending order):");
     for (const auto &tb : texture_blocks) {
-        std::cout << "  - TextureBlock: " << tb.texture_path << "\n"
-                  << "      Dimensions: " << tb.block.w << "x" << tb.block.h << "\n";
+        global_logger.info("  - TextureBlock: {}\n      Dimensions: {}x{}", tb.texture_path, tb.block.w, tb.block.h);
     }
 
     std::vector<PackedTextureContainer> currently_created_packed_texture_containers;
 
     for (auto &tb : texture_blocks) {
-        std::cout << "Processing TextureBlock: " << tb.texture_path << " with dimensions " << tb.block.w << "x"
-                  << tb.block.h << "\n";
+        global_logger.info("Processing TextureBlock: {} with dimensions {}x{}", tb.texture_path, tb.block.w,
+                           tb.block.h);
 
         if (tb.block.w > container_size || tb.block.h > container_size) {
-            std::cerr << "Error: The image " << tb.texture_path << " has dimensions " << tb.block.w << "x" << tb.block.h
-                      << ", but the container is " << container_size << "x" << container_size
-                      << ". Make the container size bigger.\n";
+            global_logger.error(
+                "The image {} has dimensions {}x{}, but the container is {}x{}. Make the container size bigger.",
+                tb.texture_path, tb.block.w, tb.block.h, container_size, container_size);
             continue;
         }
 
@@ -232,13 +235,13 @@ TexturePacker::pack_texture_blocks_into_containers(std::vector<TextureBlock> &te
 
         // Try to fit the texture block into an existing container
         for (auto &pt_container : currently_created_packed_texture_containers) {
-            std::cout << "  Attempting to fit into an existing container...\n";
+            global_logger.info("  Attempting to fit into an existing container...");
 
             pt_container.packer->fit(tb.block);
 
             // if the block has been fit in
             if (tb.block.packed_placement) {
-                std::cout << "    Successfully packed into existing container.\n";
+                global_logger.info("    Successfully packed into existing container.");
                 for (auto &[_, subtexture_data] : tb.subtextures) {
                     subtexture_data["x"] += tb.block.packed_placement->top_left_x;
                     subtexture_data["y"] += tb.block.packed_placement->top_left_y;
@@ -248,12 +251,12 @@ TexturePacker::pack_texture_blocks_into_containers(std::vector<TextureBlock> &te
                 found_container_to_fit_texture_in = true;
                 break;
             } else {
-                std::cout << "    Failed to fit into this container.\n";
+                global_logger.info("    Failed to fit into this container.");
             }
         }
 
         if (!found_container_to_fit_texture_in) {
-            std::cout << "  Creating a new container for the texture.\n";
+            global_logger.info("  Creating a new container for the texture.");
 
             auto new_packer = std::make_shared<SplitPacker>(container_size, container_size);
             new_packer->fit(tb.block);
@@ -261,12 +264,12 @@ TexturePacker::pack_texture_blocks_into_containers(std::vector<TextureBlock> &te
             PackedTextureContainer pt(new_packer);
 
             if (tb.block.packed_placement) {
-                std::cout << "    Successfully packed into the new container.\n";
+                global_logger.info("    Successfully packed into the new container.");
                 pt.packed_texture_blocks.push_back(tb);
-
                 // No need to update subtexture data, as it's in the top-left corner
             } else {
-                std::cerr << "    Error: Created a new container, but the texture still couldn't fit.\n";
+                global_logger.error("    Created a new container, but the texture still couldn't fit: {}",
+                                    tb.texture_path);
             }
 
             currently_created_packed_texture_containers.push_back(pt);
@@ -274,20 +277,19 @@ TexturePacker::pack_texture_blocks_into_containers(std::vector<TextureBlock> &te
     }
 
     // Summary of results
-    std::cout << "Packing completed. Created " << currently_created_packed_texture_containers.size()
-              << " containers.\n";
+    global_logger.info("Packing completed. Created {} containers.", currently_created_packed_texture_containers.size());
     for (size_t i = 0; i < currently_created_packed_texture_containers.size(); ++i) {
         const auto &container = currently_created_packed_texture_containers[i];
-        std::cout << "Container " << i << ":\n";
-        std::cout << "  - Number of packed blocks: " << container.packed_texture_blocks.size() << "\n";
+        global_logger.info("Container {}:", i);
+        global_logger.info("  - Number of packed blocks: {}", container.packed_texture_blocks.size());
         for (const auto &block : container.packed_texture_blocks) {
-            std::cout << "    - TextureBlock: " << block.texture_path << "\n"
-                      << "        Dimensions: " << block.block.w << "x" << block.block.h << "\n";
+            global_logger.info("    - TextureBlock: {}\n        Dimensions: {}x{}", block.texture_path, block.block.w,
+                               block.block.h);
             if (block.block.packed_placement) {
                 const auto &placement = block.block.packed_placement.value();
-                std::cout << "        Placement: (" << placement.top_left_x << ", " << placement.top_left_y << ")\n";
+                global_logger.info("        Placement: ({}, {})", placement.top_left_x, placement.top_left_y);
             } else {
-                std::cout << "        Placement: Not packed\n";
+                global_logger.info("        Placement: Not packed");
             }
         }
     }
@@ -298,6 +300,7 @@ TexturePacker::pack_texture_blocks_into_containers(std::vector<TextureBlock> &te
 std::vector<TextureBlock>
 TexturePacker::construct_texture_blocks_from_texture_paths(const std::vector<std::string> &texture_paths) {
     std::vector<TextureBlock> texture_blocks;
+
     for (const auto &file_path : texture_paths) {
         // Load image using stb_image
         int width, height, channels;
@@ -305,6 +308,7 @@ TexturePacker::construct_texture_blocks_from_texture_paths(const std::vector<std
         // we're throwing away the image data here, because we only need width and height really
         unsigned char *img_data = stbi_load(file_path.c_str(), &width, &height, &channels, 0);
         if (img_data) {
+            // Example condition for processing the image
             if (true) {
                 std::map<std::string, std::map<std::string, float>> subtextures;
 
@@ -317,36 +321,27 @@ TexturePacker::construct_texture_blocks_from_texture_paths(const std::vector<std
                     json_file >> json;
                     if (json.contains("sub_textures")) {
                         subtextures = json["sub_textures"];
-                        /*for (auto &[key, value] : json["sub_textures"].items()) {*/
-                        /*    // Assuming value is a JSON array of integers*/
-                        /*    if (value.is_array()) {*/
-                        /*        subtextures[key] = value.get<std::vector<int>>();*/
-                        /*    }*/
-                        /*}*/
                     }
                 }
 
-                // Append data including the full file path
-                std::cout << "Found texture " << file_path << " with dimensions " << width << "x" << height
-                          << std::endl;
+                global_logger.info("Found texture {} with dimensions {}x{}", file_path, width, height);
 
                 // here the data gets saved into new memory now.
                 std::vector<unsigned char> image_data(img_data, img_data + width * height * channels);
 
-                // something about subtextures needs to be thought about.
-                /*TextureBlock tb(width, height, file_path, image_data, subtextures);*/
+                // Create the TextureBlock
                 TextureBlock tb(width, height, file_path);
                 tb.subtextures = subtextures;
                 texture_blocks.push_back(tb);
 
                 stbi_image_free(img_data);
             } else {
-                // in the future we should stop caring about this.
-                std::cout << "The texture " << file_path << " did not have power-of-two dimensions" << std::endl;
+                // Example future check for power-of-two dimensions
+                global_logger.warn("The texture {} did not have power-of-two dimensions", file_path);
                 stbi_image_free(img_data);
             }
         } else {
-            std::cout << "Failed to load texture: " << file_path << std::endl;
+            global_logger.error("Failed to load texture: {}", file_path);
         }
     }
 
@@ -382,11 +377,11 @@ void TexturePacker::regenerate(const std::vector<std::string> &new_texture_paths
     int num_layers = static_cast<int>(packed_texture_paths.size());
 
     // Assuming all textures are the same size; load the first texture to get dimensions
-    std::cerr << "about to load texture: " << packed_texture_paths[0].string() << std::endl;
+    global_logger.info("about to load texture: {}", packed_texture_paths[0].string());
     std::string first_matching_texture_path = packed_texture_paths[0].string();
     data = stbi_load(first_matching_texture_path.c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
     if (!data) {
-        std::cerr << "Failed to load texture: " << packed_texture_paths[0].string() << std::endl;
+        global_logger.error("Failed to load texture: {}", packed_texture_paths[0].string());
         return;
     }
     stbi_image_free(data);
@@ -521,18 +516,18 @@ void TexturePacker::populate_texture_index_to_bounding_box() {
 
     // resize the vector to accommodate the maximum index
     texture_index_to_bounding_box.resize(max_index + 1);
-    std::cout << "there are " << file_path_to_packed_texture_info.size() << " many packed textures" << std::endl;
-    /*texture_index_to_bounding_box.resize(file_path_to_packed_texture_info.size());*/
+    global_logger.info("There are {} packed textures", file_path_to_packed_texture_info.size());
+
     for (const auto &[file_path, sub_texture] : file_path_to_packed_texture_info) {
         int packed_texture_bounding_box_index = sub_texture.packed_texture_bounding_box_index;
 
-        // construct bounding box (tlx, tly, width, height) and convert everyhting into 0, 1 space.
+        // construct bounding box (tlx, tly, width, height) and convert everything into 0..1 space.
         glm::vec4 bounding_box(static_cast<float>(sub_texture.top_left_x) / container_side_length,
                                static_cast<float>(sub_texture.top_left_y) / container_side_length,
                                static_cast<float>(sub_texture.width) / container_side_length,
                                static_cast<float>(sub_texture.height) / container_side_length);
 
-        std::cout << "accessing at " << packed_texture_bounding_box_index << std::endl;
+        global_logger.debug("Accessing bounding box at index {}", packed_texture_bounding_box_index);
         texture_index_to_bounding_box[packed_texture_bounding_box_index] = bounding_box;
     }
 }
